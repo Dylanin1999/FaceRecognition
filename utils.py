@@ -1,5 +1,4 @@
 import time
-
 import torch
 
 def train_one_epoch(model,optimizer,loss,lr_schedule,epoch,dataloader,device,printf,batch):

@@ -1,4 +1,4 @@
-from main import mobilenet_v3
+from nets.mobileNetV3 import mobilenet_v3
 import argparse
 import torchvision
 from torch.utils.data import DataLoader
