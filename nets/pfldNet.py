@@ -5,9 +5,9 @@ from torchsummary import summary
 
 
 class InvertedResidual(nn.Module):
-    def __init__(self,inputChannel,outChannel,kernelSize,strides,expand_ratio):
+    def __init__(self,inputChannel,outChannel,strides,expand_ratio):
         super(InvertedResidual, self).__init__()
-        self.paddings = kernelSize-1
+        #self.paddings = kernelSize-1
         self.inputChannel = inputChannel
         self.outChannel = outChannel
         self.strides = strides
@@ -46,8 +46,10 @@ class InvertedResidual(nn.Module):
         return x
 
 
-class MobileNetV2(nn.Module):
 
+s
+
+class MobileNetV2(nn.Module):
 
     def __init__(self):
         super(MobileNetV2, self).__init__()
@@ -58,10 +60,17 @@ class MobileNetV2(nn.Module):
             [4, 128, 6, 1],
             [2, 16, 1, 1]
         ]
-    def forward(self):
+    def forward(self,input):
         for i in self.BottleneckCfg:
             bottleneck = InvertedResidual(i[0],i[1],i[2],i[3])
+            outPut = bottleneck(input)
 
+        return outPut
+
+x = torch.rand(4,32,32,3)
+
+net = MobileNetV2()
+out = net(x)
 
 
 
