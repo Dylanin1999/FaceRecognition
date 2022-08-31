@@ -46,9 +46,6 @@ class InvertedResidual(nn.Module):
         return x
 
 
-
-s
-
 class MobileNetV2(nn.Module):
 
     def __init__(self):
@@ -61,9 +58,14 @@ class MobileNetV2(nn.Module):
             [2, 16, 1, 1]
         ]
     def forward(self,input):
-        for i in self.BottleneckCfg:
-            bottleneck = InvertedResidual(i[0],i[1],i[2],i[3])
-            outPut = bottleneck(input)
+        x = nn.Conv2d(in_channels=3,out_channels=self.BottleneckCfg[0][1],kernel_size=3,stride=2)
+        for layer,i in enumerate(self.BottleneckCfg):
+            for time in range(i[2]):
+                if time<i[2]:
+                    bottleneck = InvertedResidual(i[1],i[1],i[3],i[0])
+                    outPut = bottleneck(input)
+                else:
+                    bottleneck = InvertedResidual(i[1], self.BottleneckCfg[layer+1][1], i[3], i[0])
 
         return outPut
 
