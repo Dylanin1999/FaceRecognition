@@ -32,17 +32,11 @@ class InvertedResidual(nn.Module):
             )
 
     def forward(self, input):
-        # print("111",input.size())
         x = self.Conv2dRelu6(input)
-        # print("222",x.size())
         x = self.Dwise(x)
-        # print("3333",x.size())
         out = self.Conv2dLinear(x)
-        # print("444",out.size())
-        if self.strides == 1:
-            print("!!!!RES ADD")
-            out =out+input
-        # print("444",out.size())
+        if self.strides == 1 and self.inputChannel == self.outChannel:
+            out = out+input
         return out
 
 
@@ -58,31 +52,33 @@ class MobileNetV2(nn.Module):
             [4, 128, 6, 1],
             [2, 16, 1, 1]
         ]
+        self.endConv = nn.Sequential(
+            nn.Conv2d(in_channels=self.BottleneckCfg[-1][1],out_channels=32,kernel_size=3,stride=2),
+            nn.Conv2d(in_channels=32, out_channels=128, kernel_size=7, stride=1),
+            nn.Conv2d(in_channels=128,kernel_siz)
+        )
+
+
     def forward(self,input):
         x = nn.Conv2d(in_channels=3,out_channels=self.BottleneckCfg[0][1],kernel_size=3,stride=2,padding=1)(input)
         x = nn.Conv2d(in_channels=self.BottleneckCfg[0][1], padding=1,out_channels=self.BottleneckCfg[0][1], kernel_size=3, stride=2,groups=self.BottleneckCfg[0][1])(x)
         for layer, i in enumerate(self.BottleneckCfg):
-            for time in range(1,i[2]+1):
-               # if time != i[2]-1:
+            for time in range(1, i[2]+1):
                 if time == 1:
                     if layer == 0:
-                        bottleneck = InvertedResidual(i[1],i[1],i[0],i[3])
+                        bottleneck = InvertedResidual(i[1],i[1],i[3],i[0])
                     else:
-                        bottleneck = InvertedResidual(self.BottleneckCfg[layer-1][1], i[1], i[0], i[3])
+                        bottleneck = InvertedResidual(self.BottleneckCfg[layer-1][1], i[1], i[3], i[0])
                 else:
-                    bottleneck = InvertedResidual(i[1], i[1], 1, i[3])
+                    bottleneck = InvertedResidual(i[1], i[1], 1,i[0])
                 x = bottleneck(x)
-                print("operator out size: ",x.size())
-                # else:
-                #     bottleneck = InvertedResidual(i[1], self.BottleneckCfg[layer+1][1], i[0], i[3])
-                #     x = bottleneck(x)
-                #     print(x.size())
 
         return x
 
 x = torch.rand(4,3,224,224)
 
 net = MobileNetV2()
+
 out = net(x)
 
 
