@@ -52,11 +52,23 @@ class MobileNetV2(nn.Module):
             [4, 128, 6, 1],
             [2, 16, 1, 1]
         ]
+
+        #input kernel size,outchannel,stride
+        self.auxiliaryCfg = [
+            [3, 128, 2],
+            [3, 128, 1],
+            [3, 32, 2],
+            [7, 128, 1],
+        ]
+
         self.endConv = nn.Sequential(
-            nn.Conv2d(in_channels=self.BottleneckCfg[-1][1],out_channels=32,kernel_size=3,stride=2),
+            nn.Conv2d(in_channels=self.BottleneckCfg[-1][1],out_channels=32,kernel_size=3,stride=2,padding=1),
             nn.Conv2d(in_channels=32, out_channels=128, kernel_size=7, stride=1),
-            nn.Conv2d(in_channels=128,kernel_siz)
+      #      nn.Conv2d(in_channels=128,kernel_siz)
         )
+
+    def AuxiliaryNet(self):
+        for layer, i in enumerate(self.auxiliaryCfg):
 
 
     def forward(self,input):
@@ -72,14 +84,21 @@ class MobileNetV2(nn.Module):
                 else:
                     bottleneck = InvertedResidual(i[1], i[1], 1,i[0])
                 x = bottleneck(x)
+                if layer==0:
+                    Auxout = x
 
+        x = self.endConv(x)
+
+
+
+        print("out Shape:",x.size())
         return x
 
 x = torch.rand(4,3,224,224)
 
 net = MobileNetV2()
 
-out = net(x)
+out,Aux = net(x)
 
 
 
