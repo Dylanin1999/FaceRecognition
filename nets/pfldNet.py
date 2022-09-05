@@ -2,7 +2,7 @@ import torch.nn as nn
 from collections import OrderedDict
 import torch
 from torchsummary import summary
-
+import math
 
 class InvertedResidual(nn.Module):
     def __init__(self,inputChannel,outChannel,strides,expand_ratio):
@@ -52,17 +52,6 @@ class MobileNetV2(nn.Module):
             [4, 128, 6, 1],
             [2, 16, 1, 1]
         ]
-
-        #input kernel size,outchannel,stride,padding``
-        self.auxiliaryCfg = [
-            [3, 128, 2,1],
-            [3, 128, 1,1],
-            [3, 32, 2,1],
-            [7, 128, 1,0],
-        ]
-
-
-
     def endConv(self,input):
         s1 = input
         print("s1 Shape:", s1.size())
@@ -83,28 +72,6 @@ class MobileNetV2(nn.Module):
       #      nn.Conv2d(in_channels=128,kernel_siz)
         return out
 
-    #
-
-    def baseConv(self,input,kernelSize,outChannel,stride,padding):
-        out = nn.Conv2d(in_channels=input.size()[1],kernel_size=kernelSize,out_channels=outChannel,stride=stride,padding=padding)(input)
-        return out
-
-
-    def AuxiliaryNet(self,input):
-        x = input
-        for layer, i in enumerate(self.auxiliaryCfg):
-            kernelSize = i[0]
-            stride = i[2]
-            padding = i[3]
-
-            x = self.baseConv(input=x,kernelSize=kernelSize,outChannel=i[1],stride=stride,padding=padding)
-            print("aux size: ",x.size())
-        x = torch.flatten(x,1)
-        x = nn.Linear(x.size()[1], 32)(x)
-        x = nn.Linear(x.size()[1], 3)(x)
-        print("aux out size: ", x.size())
-        return x
-
     def forward(self,input):
         x = nn.Conv2d(in_channels=3,out_channels=self.BottleneckCfg[0][1],kernel_size=3,stride=2,padding=1)(input)
         x = nn.Conv2d(in_channels=self.BottleneckCfg[0][1], padding=1,out_channels=self.BottleneckCfg[0][1], kernel_size=3, stride=2,groups=self.BottleneckCfg[0][1])(x)
@@ -120,22 +87,72 @@ class MobileNetV2(nn.Module):
                 x = bottleneck(x)
             if layer==0:
                 Auxint = x
-                print("AUX input size: ",Auxint.size())
-                auxout = self.AuxiliaryNet(Auxint)
 
 
-        print("out Shape:", x.size())
         out = self.endConv(x)
 
         out = nn.Linear(out.size()[1],136)(out)
-        return out,auxout
+        return out,Auxint
+
+class  AuxiliaryNet(nn.Module):
+
+    def __init__(self):
+        super(AuxiliaryNet, self).__init__()
+
+        # input kernel size,outchannel,stride,padding``
+        self.auxiliaryCfg = [
+            [3, 128, 2, 1],
+            [3, 128, 1, 1],
+            [3, 32, 2, 1],
+            [7, 128, 1, 0],
+        ]
+
+    def baseConv(self, input, kernelSize, outChannel, stride, padding):
+        out = nn.Conv2d(in_channels=input.size()[1], kernel_size=kernelSize, out_channels=outChannel, stride=stride,
+                        padding=padding)(input)
+        return out
+
+    def forward(self,input):
+        for layer, i in enumerate(self.auxiliaryCfg):
+            kernelSize = i[0]
+            stride = i[2]
+            padding = i[3]
+            x = input
+            x = self.baseConv(input=x,kernelSize=kernelSize,outChannel=i[1],stride=stride,padding=padding)
+            x = torch.flatten(x,1)
+            x = nn.Linear(x.size()[1], 32)(x)
+            x = nn.Linear(x.size()[1], 3)(x)
+        return x
+
+
+class WingLoss(nn.Module):
+
+    def __init__(self, wing_w=10.0, wing_epsilon=2.0):
+        super(WingLoss, self).__init__()
+        self.wing_w = wing_w
+        self.wing_epsilon = wing_epsilon
+        self.wing_c = self.wing_w * (1.0 - math.log(1.0 + self.wing_w / self.wing_epsilon))
+
+    def forward(self, targets, predictions, euler_angle_weights=None):
+        abs_error = torch.abs(targets - predictions)
+        loss = torch.where(torch.le(abs_error, self.wing_w),
+                           self.wing_w * torch.log(1.0 + abs_error / self.wing_epsilon), abs_error - self.wing_c)
+        loss_sum = torch.sum(loss, 1)
+        if euler_angle_weights is not None:
+            loss_sum *= euler_angle_weights
+        return torch.mean(loss_sum)
 
 x = torch.rand(4,3,224,224)
 
 net = MobileNetV2()
-
-out,auxout = net(x)
+aux = AuxiliaryNet()
+out,Auxint = net(x)
+Auxout = aux(Auxint)
 print("out shape: ",out.size())
+print("Auxint shape: ",Auxint.size())
+
+print("Auxout shape: ",Auxout.size())
+
 
 
 
