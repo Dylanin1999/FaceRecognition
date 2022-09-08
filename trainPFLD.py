@@ -9,7 +9,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from nets import pfldNet
 from euler_angles_utils import calculate_pitch_yaw_roll
-
+import time
 
 
 #分别获取图像数据路径和landmark
@@ -76,47 +76,62 @@ class DataSet(Dataset):
             print(imgPath)
         return image, landmarks, attributes
 
-train_data_transforms = tv.transforms.Compose([
+
+
+if __name__=='__main__':
+    start_time = time.time()
+    train_data_transforms = tv.transforms.Compose([
         tv.transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
         tv.transforms.Resize((224, 224)),
         tv.transforms.ToTensor()
     ])
 
-train_dataset = DataSet("./data/list.txt", 224, transforms=train_data_transforms,
+    train_dataset = DataSet("./data/list.txt", 224, transforms=train_data_transforms,
                             is_train=True)
-train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=12)
+    train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=0)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = pfldNet.MobileNetV2()
-auxiliary_net = pfldNet.AuxiliaryNet()
-optimizer = torch.optim.Adam([{'params': model.parameters()}, {'params': auxiliary_net.parameters()}],
-                             lr=0.1, weight_decay=5e-5)  # optimizer
-model.to(device)
-auxiliary_net.to(device)
-for epoch in range(1000):
-    model.train()
-    # auxiliary_net.train()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print("torch.cuda.is_available()", torch.cuda.is_available())
+    model = pfldNet.MobileNetV2().cuda()
+    auxiliary_net = pfldNet.AuxiliaryNet().cuda()
 
-    for i_batch, (images_batch, landmarks_batch, attributes_batch) in enumerate(train_loader):
-        images_batch = Variable(images_batch.to(device))
-        landmarks_batch = Variable(landmarks_batch)
-        pre_landmarks, auxiliary_features = model(images_batch)
-        euler_angles_pre = auxiliary_net(auxiliary_features)
-        euler_angle_weights = get_euler_angle_weights(landmarks_batch, euler_angles_pre, device)
-        loss = pfldNet.wing_loss(landmarks_batch.to(device), pre_landmarks, euler_angle_weights)
-        loss = torch.nn.L1Loss()
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
 
-        if ((i_batch + 1) % 100) == 0 or (i_batch + 1) == len(train_loader):
-            Epoch = 'Epoch:[{:<4}][{:<4}/{:<4}]'.format(epoch, i_batch + 1, len(train_loader))
-            Loss = 'Loss: {:2.3f}'.format(loss.item())
-            trained_sum_iters = len(train_loader) * epoch + i_batch + 1
-            # average_time = (time.time() - start_time) / trained_sum_iters
-            # remain_time = average_time * (len(train_loader) * args.max_epoch - trained_sum_iters) / 3600
-            # print('{}\t{}\t lr {:2.3}\t average_time:{:.3f}s\t remain_time:{:.3f}h'.format(Epoch, Loss,
-            #                                                                                optimizer.param_groups[
-            #                                                                                    0]['lr'],
-            #                                                                                average_time,
-            #                                                                                remain_time))
+    optimizer = torch.optim.Adam([{'params': model.parameters()}, {'params': auxiliary_net.parameters()}],
+                                 lr=0.1, weight_decay=5e-5)  # optimizer
+    lr_epoch = '20,50,100,300,400'
+    lr_epoch = lr_epoch.strip().split(',')
+    lr_epoch = list(map(int, lr_epoch))
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_epoch, gamma=0.1)
+
+    for epoch in range(1000):
+        # model.train()
+        # auxiliary_net.train()
+
+        for i_batch, (images_batch, landmarks_batch, attributes_batch) in enumerate(train_loader):
+            images_batch = images_batch.to(device)
+            landmarks_batch = landmarks_batch
+            pre_landmarks, auxiliary_features = model(images_batch)
+            euler_angles_pre = auxiliary_net(auxiliary_features.to(device))
+            euler_angle_weights = get_euler_angle_weights(landmarks_batch, euler_angles_pre, device)
+            loss = pfldNet.wing_loss(landmarks_batch.to(device), pre_landmarks, euler_angle_weights)
+            loss = torch.nn.L1Loss()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            if ((i_batch + 1) % 100) == 0 or (i_batch + 1) == len(train_loader):
+                Epoch = 'Epoch:[{:<4}][{:<4}/{:<4}]'.format(epoch, i_batch + 1, len(train_loader))
+                Loss = 'Loss: {:2.3f}'.format(loss.item())
+                trained_sum_iters = len(train_loader) * epoch + i_batch + 1
+                average_time = (time.time() - start_time) / trained_sum_iters
+                remain_time = average_time * (len(train_loader) * 1000 - trained_sum_iters) / 3600
+                print('{}\t{}\t lr {:2.3}\t average_time:{:.3f}s\t remain_time:{:.3f}h'.format(Epoch, Loss,
+                                                                                               optimizer.param_groups[0][
+                                                                                                   'lr'],
+                                                                                               average_time,
+                                                                                               remain_time))
+        scheduler.step()
+        # save model
+        checkpoint_path = os.path.join("./", 'model_' + str(epoch) + '.pth')
+
+        torch.save(model, checkpoint_path)

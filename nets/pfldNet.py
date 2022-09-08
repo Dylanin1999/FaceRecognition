@@ -42,6 +42,16 @@ class InvertedResidual(nn.Module):
 
 class MobileNetV2(nn.Module):
 
+    # def endConv(self, input):
+    #     s1 = input
+    #     s2 = nn.Conv2d(in_channels=self.BottleneckCfg[-1][1], out_channels=32, kernel_size=3, stride=2, padding=1)(s1)
+    #     s3 = nn.Conv2d(in_channels=32, out_channels=128, kernel_size=7, stride=1)(s2)
+    #     s1 = nn.AvgPool2d(kernel_size=s1.size()[-1])(s1)
+    #     s2 = nn.AvgPool2d(kernel_size=s2.size()[-1])(s2)
+    #     out = torch.cat([s1, s2, s3], 1)
+    #     out = torch.flatten(out, 1)
+    #     return out
+
     def __init__(self):
         super(MobileNetV2, self).__init__()
 
@@ -52,47 +62,44 @@ class MobileNetV2(nn.Module):
             [4, 128, 6, 1],
             [2, 16, 1, 1]
         ]
-    def endConv(self,input):
-        s1 = input
-        print("s1 Shape:", s1.size())
-        s2 = nn.Conv2d(in_channels=self.BottleneckCfg[-1][1],out_channels=32,kernel_size=3,stride=2,padding=1)(s1)
-        print("s2 Shape:", s2.size())
-        s3 = nn.Conv2d(in_channels=32, out_channels=128, kernel_size=7, stride=1)(s2)
+        #根据配置信息去先生产对应的层，然后放在list里
+        self.bottleneckList = nn.ModuleList()
 
-        s1 = nn.AvgPool2d(kernel_size=s1.size()[-1])(s1)
-        s2 = nn.AvgPool2d(kernel_size=s2.size()[-1])(s2)
-        # s1 = torch.flatten(s1, 1)
-        # s2 = torch.flatten(s2, 1)
-        # s3 = torch.flatten(s3, 1)
-        print("s1 Shape:", s1.size())
-        print("s2 Shape:", s2.size())
-        print("s3 Shape:", s3.size())
-        out = torch.cat([s1, s2, s3], 1)
-        out = torch.flatten(out,1)
-      #      nn.Conv2d(in_channels=128,kernel_siz)
-        return out
-
-    def forward(self,input):
-        x = nn.Conv2d(in_channels=3,out_channels=self.BottleneckCfg[0][1],kernel_size=3,stride=2,padding=1)(input)
-        x = nn.Conv2d(in_channels=self.BottleneckCfg[0][1], padding=1,out_channels=self.BottleneckCfg[0][1], kernel_size=3, stride=2,groups=self.BottleneckCfg[0][1])(x)
         for layer, i in enumerate(self.BottleneckCfg):
-            for time in range(1, i[2]+1):
+            for time in range(1, i[2] + 1):
                 if time == 1:
                     if layer == 0:
-                        bottleneck = InvertedResidual(i[1],i[1],i[3],i[0])
+                        self.bottleneck = InvertedResidual(i[1], i[1], i[3], i[0])
                     else:
-                        bottleneck = InvertedResidual(self.BottleneckCfg[layer-1][1], i[1], i[3], i[0])
+                        self.bottleneck = InvertedResidual(self.BottleneckCfg[layer - 1][1], i[1], i[3], i[0])
                 else:
-                    bottleneck = InvertedResidual(i[1], i[1], 1,i[0])
-                x = bottleneck(x)
-            if layer==0:
-                Auxint = x
+                    self.bottleneck = InvertedResidual(i[1], i[1], 1, i[0])
+                bottleName = '''bottneck_%d_%d'''%(layer,time)
+
+                self.bottleneckList.append(self.bottleneck)
+
+        # print( self.bottleneckList)
+        # self.endConvS  = self.endConv()
 
 
-        out = self.endConv(x)
+        self.Conv2d_1 = nn.Conv2d(in_channels=3,out_channels=self.BottleneckCfg[0][1],kernel_size=3,stride=2,padding=1)
+        self.Conv2d_2 = nn.Conv2d(in_channels=self.BottleneckCfg[0][1], padding=1,out_channels=self.BottleneckCfg[0][1], kernel_size=3, stride=2,groups=self.BottleneckCfg[0][1])
 
-        out = nn.Linear(out.size()[1],136)(out)
-        return out,Auxint
+    def forward(self,input):
+        x = self.Conv2d_1(input)
+        x = self.Conv2d_2(x)
+
+        for bottleNeck in self.bottleneckList:
+            x = bottleNeck(x)
+
+
+
+            # if layer==0:
+            #     Auxint = x
+        # out = self.endConv(x)
+
+        # out = nn.Linear(out.size()[1],136)(out)
+        return x#,Auxint
 
 class  AuxiliaryNet(nn.Module):
 
@@ -106,6 +113,11 @@ class  AuxiliaryNet(nn.Module):
             [3, 32, 2, 1],
             [7, 128, 1, 0],
         ]
+
+        self.baseConv = nn.Sequential(
+            nn.Conv2d(in_channels=input.size()[1], kernel_size=kernelSize, out_channels=outChannel, stride=stride,
+                        padding=padding)(input)
+        )
 
     def baseConv(self, input, kernelSize, outChannel, stride, padding):
         out = nn.Conv2d(in_channels=input.size()[1], kernel_size=kernelSize, out_channels=outChannel, stride=stride,
@@ -142,16 +154,30 @@ class WingLoss(nn.Module):
             loss_sum *= euler_angle_weights
         return torch.mean(loss_sum)
 
+# class TestL(nn.Module):
+#     def __init__(self):
+#         super(TestL, self).__init__()
+#         self.conv1 = nn.Conv2d(in_channels=3,out_channels=24,kernel_size=3,stride=1)
+#         self.conv2 = nn.Conv2d(in_channels=3,out_channels=24,kernel_size=3,stride=1)
+#         self.conv3 = nn.Conv2d(in_channels=3,out_channels=24,kernel_size=3,stride=1)
+#
+#     def forward(self, input):
+#         x = self.conv1(input)
+#         x = self.conv2(x)
+#         x = self.conv3(x)
+#         return x
+
 x = torch.rand(4,3,224,224)
-
-net = MobileNetV2()
-aux = AuxiliaryNet()
-out,Auxint = net(x)
-Auxout = aux(Auxint)
+x = x.cuda()
+net = MobileNetV2().cuda()
+# aux = AuxiliaryNet().cuda()
+out = net(x)
+# out,Auxint = net(x)
+# Auxout = aux(Auxint)
 print("out shape: ",out.size())
-print("Auxint shape: ",Auxint.size())
-
-print("Auxout shape: ",Auxout.size())
+# print("Auxint shape: ",Auxint.size())
+#
+# print("Auxout shape: ",Auxout.size())
 
 
 
