@@ -7,7 +7,6 @@ import math
 class InvertedResidual(nn.Module):
     def __init__(self,inputChannel,outChannel,strides,expand_ratio):
         super(InvertedResidual, self).__init__()
-        #self.paddings = kernelSize-1
         self.inputChannel = inputChannel
         self.outChannel = outChannel
         self.strides = strides
@@ -22,6 +21,7 @@ class InvertedResidual(nn.Module):
         self.Conv2dLinear = nn.Sequential(
                 nn.Conv2d(in_channels=self.hiddenlayerChannel, out_channels=self.outChannel, kernel_size=1,
                           stride=1, padding=0, bias=False),
+                nn.BatchNorm2d(self.outChannel)
 
             )
         self.Dwise = nn.Sequential(
@@ -41,16 +41,6 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV2(nn.Module):
-
-    # def endConv(self, input):
-    #     s1 = input
-    #     s2 = nn.Conv2d(in_channels=self.BottleneckCfg[-1][1], out_channels=32, kernel_size=3, stride=2, padding=1)(s1)
-    #     s3 = nn.Conv2d(in_channels=32, out_channels=128, kernel_size=7, stride=1)(s2)
-    #     s1 = nn.AvgPool2d(kernel_size=s1.size()[-1])(s1)
-    #     s2 = nn.AvgPool2d(kernel_size=s2.size()[-1])(s2)
-    #     out = torch.cat([s1, s2, s3], 1)
-    #     out = torch.flatten(out, 1)
-    #     return out
 
     def __init__(self):
         super(MobileNetV2, self).__init__()
@@ -78,62 +68,62 @@ class MobileNetV2(nn.Module):
 
                 self.bottleneckList.append(self.bottleneck)
 
-        # print( self.bottleneckList)
-        # self.endConvS  = self.endConv()
+        self.Conv2d_1 = nn.Sequential(nn.Conv2d(in_channels=3,out_channels=self.BottleneckCfg[0][1],kernel_size=3,stride=2,padding=1),
+                                      nn.BatchNorm2d(self.BottleneckCfg[0][1]))
 
 
-        self.Conv2d_1 = nn.Conv2d(in_channels=3,out_channels=self.BottleneckCfg[0][1],kernel_size=3,stride=2,padding=1)
-        self.Conv2d_2 = nn.Conv2d(in_channels=self.BottleneckCfg[0][1], padding=1,out_channels=self.BottleneckCfg[0][1], kernel_size=3, stride=2,groups=self.BottleneckCfg[0][1])
+        self.Conv2d_2 = nn.Sequential(nn.Conv2d(in_channels=self.BottleneckCfg[0][1], padding=1,out_channels=self.BottleneckCfg[0][1], kernel_size=3, stride=2,groups=self.BottleneckCfg[0][1]),
+                                      nn.BatchNorm2d(self.BottleneckCfg[0][1]))
 
     def forward(self,input):
         x = self.Conv2d_1(input)
         x = self.Conv2d_2(x)
 
-        for bottleNeck in self.bottleneckList:
+        for layer,bottleNeck in enumerate(self.bottleneckList):
             x = bottleNeck(x)
+            if layer == 0:
+                AuxInput = x
 
-
-
-            # if layer==0:
-            #     Auxint = x
-        # out = self.endConv(x)
-
-        # out = nn.Linear(out.size()[1],136)(out)
-        return x#,Auxint
+        return x, AuxInput
 
 class  AuxiliaryNet(nn.Module):
-
+    def baseConv(self,inChannel, kernelSize, outChannel, stride, padding):
+        out = nn.Conv2d(in_channels=inChannel, kernel_size=kernelSize, out_channels=outChannel, stride=stride,
+                        padding=padding)
+        return out
     def __init__(self):
         super(AuxiliaryNet, self).__init__()
 
-        # input kernel size,outchannel,stride,padding``
+        # inchannel ,kernel_size,outchannel,stride,padding``
         self.auxiliaryCfg = [
-            [3, 128, 2, 1],
-            [3, 128, 1, 1],
-            [3, 32, 2, 1],
-            [7, 128, 1, 0],
+            [64, 3, 128, 2, 1],
+            [128,3, 128, 1, 1],
+            [128,3, 32, 2, 1],
+            [32, 7, 128, 1, 0],
         ]
 
-        self.baseConv = nn.Sequential(
-            nn.Conv2d(in_channels=input.size()[1], kernel_size=kernelSize, out_channels=outChannel, stride=stride,
-                        padding=padding)(input)
-        )
-
-    def baseConv(self, input, kernelSize, outChannel, stride, padding):
-        out = nn.Conv2d(in_channels=input.size()[1], kernel_size=kernelSize, out_channels=outChannel, stride=stride,
-                        padding=padding)(input)
-        return out
-
-    def forward(self,input):
+        self.AuxNetList = nn.ModuleList()
         for layer, i in enumerate(self.auxiliaryCfg):
-            kernelSize = i[0]
-            stride = i[2]
-            padding = i[3]
-            x = input
-            x = self.baseConv(input=x,kernelSize=kernelSize,outChannel=i[1],stride=stride,padding=padding)
-            x = torch.flatten(x,1)
-            x = nn.Linear(x.size()[1], 32)(x)
-            x = nn.Linear(x.size()[1], 3)(x)
+            kernelSize = i[1]
+            stride = i[3]
+            padding = i[4]
+            outChannels = i[2]
+            inchannels = i[0]
+
+
+            self.AuxLayer = self.baseConv(inChannel=inchannels, kernelSize=kernelSize, outChannel=outChannels, stride=stride, padding=padding)
+            self.AuxNetList.append(self.AuxLayer)
+
+        self.Flatten = torch.nn.Flatten()
+        self.AuxNetList.append(self.Flatten)
+        self.Linear = torch.nn.Linear(self.auxiliaryCfg[-1][2],32)
+        self.AuxNetList.append(self.Linear)
+        self.Linear = torch.nn.Linear(32, 3)
+        self.AuxNetList.append(self.Linear)
+    def forward(self,input):
+        x = input
+        for layer, AuxLayer in enumerate(self.AuxNetList):
+            x = AuxLayer(x)
         return x
 
 
@@ -154,28 +144,17 @@ class WingLoss(nn.Module):
             loss_sum *= euler_angle_weights
         return torch.mean(loss_sum)
 
-# class TestL(nn.Module):
-#     def __init__(self):
-#         super(TestL, self).__init__()
-#         self.conv1 = nn.Conv2d(in_channels=3,out_channels=24,kernel_size=3,stride=1)
-#         self.conv2 = nn.Conv2d(in_channels=3,out_channels=24,kernel_size=3,stride=1)
-#         self.conv3 = nn.Conv2d(in_channels=3,out_channels=24,kernel_size=3,stride=1)
-#
-#     def forward(self, input):
-#         x = self.conv1(input)
-#         x = self.conv2(x)
-#         x = self.conv3(x)
-#         return x
 
 x = torch.rand(4,3,224,224)
 x = x.cuda()
-net = MobileNetV2().cuda()
-# aux = AuxiliaryNet().cuda()
-out = net(x)
-# out,Auxint = net(x)
-# Auxout = aux(Auxint)
+MobaNet = MobileNetV2().cuda()
+AuxNet = AuxiliaryNet().cuda()
+out,AuxInput = MobaNet(x)
+AuxInput = AuxInput.cuda()
+Auxout = AuxNet(AuxInput)
+
 print("out shape: ",out.size())
-# print("Auxint shape: ",Auxint.size())
+print("Auxint shape: ",Auxout.size())
 #
 # print("Auxout shape: ",Auxout.size())
 
