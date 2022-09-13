@@ -103,6 +103,7 @@ if __name__=='__main__':
     lr_epoch = list(map(int, lr_epoch))
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_epoch, gamma=0.1)
 
+    wing_loss = pfldNet.WingLoss(10.0, 2.0)
     for epoch in range(1000):
         # model.train()
         # auxiliary_net.train()
@@ -110,16 +111,19 @@ if __name__=='__main__':
         for i_batch, (images_batch, landmarks_batch, attributes_batch) in enumerate(train_loader):
             images_batch = images_batch.to(device)
             landmarks_batch = landmarks_batch
+            # print("landmarks_batch size is ",landmarks_batch.size())
             pre_landmarks, auxiliary_features = model(images_batch)
+            # print("pre_landmarks size is ", pre_landmarks.size())
+            # print("auxiliary_features size is ", auxiliary_features.size())
             euler_angles_pre = auxiliary_net(auxiliary_features.to(device))
             euler_angle_weights = get_euler_angle_weights(landmarks_batch, euler_angles_pre, device)
-            loss = pfldNet.wing_loss(landmarks_batch.to(device), pre_landmarks, euler_angle_weights)
-            loss = torch.nn.L1Loss()
+            loss = wing_loss(landmarks_batch.to(device), pre_landmarks, euler_angle_weights)
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if ((i_batch + 1) % 100) == 0 or (i_batch + 1) == len(train_loader):
+            if ((i_batch + 1) % 10) == 0 or (i_batch + 1) == len(train_loader):
                 Epoch = 'Epoch:[{:<4}][{:<4}/{:<4}]'.format(epoch, i_batch + 1, len(train_loader))
                 Loss = 'Loss: {:2.3f}'.format(loss.item())
                 trained_sum_iters = len(train_loader) * epoch + i_batch + 1
